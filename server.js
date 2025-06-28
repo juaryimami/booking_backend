@@ -104,34 +104,36 @@ app.post('/send-email', async (req, res) => {
     const sanitizedOrderId = sanitize(orderId);
 
     // Email configuration with improved HTML template
+     // Email Configuration
     const mailOptions = {
-      from: `"Booking System" <${process.env.EMAIL_USER}>`,
+      from: `"Booking System" <${process.env.EMAIL_USER || 'juharyimer7@gmail.com'}>`,
       to: 'booking@hashimconsultancy.org',
-      replyTo: userEmail || process.env.EMAIL_USER,
-      subject: `New Booking - Order #${sanitizedOrderId}`,
+      subject: `New Booking - Order #${orderId}`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #2c3e50;">New Booking Details</h2>
-          <table style="width: 100%; border-collapse: collapse; margin: 20px 0;">
-            <tr style="background-color: #f8f9fa;">
-              <th style="padding: 10px; text-align: left; border: 1px solid #ddd;">Order ID</th>
-              <td style="padding: 10px; border: 1px solid #ddd;">${sanitizedOrderId}</td>
-            </tr>
-            <!-- Other table rows with similar styling -->
-          </table>
-        </div>
+        <h2>New Booking Details</h2>
+        <table border="1" cellpadding="5" cellspacing="0">
+          <tr><th>Order ID</th><td>${orderId}</td></tr>
+          <tr><th>Call Type</th><td>${callType}</td></tr>
+          <tr><th>Time Slot</th><td>${new Date(startTime).toLocaleString()} - ${new Date(endTime).toLocaleString()}</td></tr>
+          <tr><th>Duration</th><td>${duration} minutes</td></tr>
+          <tr><th>User ID</th><td>${userId}</td></tr>
+          <tr><th>User Email</th><td>${userEmail || 'N/A'}</td></tr>
+          <tr><th>Price</th><td>$${price.toFixed(2)}</td></tr>
+          ${orderStatus ? `<tr><th>Status</th><td>${orderStatus}</td></tr>` : ''}
+          ${rejectionReason ? `<tr><th>Rejection Reason</th><td>${rejectionReason}</td></tr>` : ''}
+        </table>
       `,
-      attachments: []
     };
 
     // Add attachment if provided
     if (attachment && attachmentName) {
-      if (attachment.length > 5 * 1024 * 1024) { // 5MB limit
-        return res.status(400).json({ 
-          success: false,
-          error: 'Attachment too large (max 5MB)' 
-        });
-      }
+      mailOptions.attachments = [{
+        filename: attachmentName,
+        content: attachment,
+        encoding: 'base64',
+        contentType: attachmentType || 'application/octet-stream'
+      }];
+    }
       
       mailOptions.attachments.push({
         filename: sanitize(attachmentName),
