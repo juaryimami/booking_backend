@@ -1,5 +1,4 @@
 const express = require('express');
-const mysql = require('mysql2');
 const cors = require('cors');
 const nodemailer = require('nodemailer');
 require('dotenv').config();
@@ -12,25 +11,7 @@ app.use(cors({
   methods: ['GET', 'POST'],
   allowedHeaders: ['Content-Type'],
 }));
-app.use(express.json({ limit: '10mb' })); // Increased limit for file attachments
-
-// Database Configuration
-const db = mysql.createConnection({
-  host: process.env.DB_HOST || 'hashimconsultancy.org',
-  user: process.env.DB_USER || 'hashimks_booking',
-  port: process.env.DB_port || 3306,
-  password: process.env.DB_PASSWORD || 'BKG@hashim2025',
-  database: process.env.DB_DATABASE || 'hashimks_hashim_consulyancy',
-});
-
-// Database Connection
-db.connect((err) => {
-  if (err) {
-    console.error('Database connection failed:', err.message);
-    process.exit(1);
-  }
-  console.log('Connected to MySQL database');
-});
+app.use(express.json({ limit: '10mb' }));
 
 // Email Transporter Configuration
 const transporter = nodemailer.createTransport({
@@ -50,8 +31,8 @@ transporter.verify((error) => {
   }
 });
 
-// Booking Endpoint with Email Attachment Support
-app.post('/bookings', async (req, res) => {
+// Email Sending Endpoint
+app.post('/send-email', async (req, res) => {
   try {
     const {
       orderId,
@@ -61,9 +42,7 @@ app.post('/bookings', async (req, res) => {
       duration,
       userId,
       userEmail,
-      created,
       price,
-      confirmed,
       orderStatus,
       rejectionReason,
       attachment,
@@ -75,31 +54,6 @@ app.post('/bookings', async (req, res) => {
     if (!orderId || !callType || !startTime || !endTime || !duration || !userId || !price) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
-
-    // Database Insertion
-    const query = `
-      INSERT INTO bookings (
-        order_id, call_type, start_time, end_time, duration, user_id, user_email,
-        created, price, confirmed, order_status, rejection_reason
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-
-    const values = [
-      orderId,
-      callType,
-      startTime,
-      endTime,
-      duration,
-      userId,
-      userEmail || null,
-      created || new Date().toISOString(),
-      price,
-      confirmed || false,
-      orderStatus || null,
-      rejectionReason || null,
-    ];
-
-    const [result] = await db.promise().query(query, values);
 
     // Email Configuration
     const mailOptions = {
@@ -136,17 +90,17 @@ app.post('/bookings', async (req, res) => {
     const info = await transporter.sendMail(mailOptions);
     console.log('Email sent:', info.messageId);
 
-    res.status(201).json({
+    res.status(200).json({
       success: true,
-      message: 'Booking created and confirmation sent',
-      bookingId: result.insertId
+      message: 'Email sent successfully',
+      emailId: info.messageId
     });
 
   } catch (error) {
-    console.error('Error processing booking:', error);
+    console.error('Error sending email:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to process booking',
+      message: 'Failed to send email',
       error: error.message
     });
   }
@@ -156,7 +110,6 @@ app.post('/bookings', async (req, res) => {
 app.get('/health', (req, res) => {
   res.status(200).json({
     status: 'healthy',
-    database: db.state === 'connected' ? 'connected' : 'disconnected',
     timestamp: new Date().toISOString()
   });
 });
