@@ -5,74 +5,47 @@ require('dotenv').config();
 
 const app = express();
 
-// Enhanced CORS configuration for production
-const allowedOrigins = [
-  'https://hashimconsultancy.org',
-  // Add other allowed origins if needed
-];
-
+// Flexible CORS configuration to support any host
 app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g., mobile apps, curl, or localhost)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
-    }
-    return callback(null, true);
+    // Allow all origins for now (can be restricted later with an environment variable)
+    callback(null, true); // This allows any origin
   },
-  methods: ['GET', 'POST', 'OPTIONS'],
+  methods: ['GET', 'POST', 'OPTIONS'], // Handle preflight requests
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true
+  credentials: true, // Enable cookies if needed
+  optionsSuccessStatus: 200, // For legacy browser support
 }));
 
-// Enhanced security middleware
-app.use(express.json({ limit: '10mb' }));
+// Middleware
+app.use(express.json({ limit: '10mb' })); // Increased limit for attachments
 app.use(express.urlencoded({ extended: true }));
 
-// Production settings
-const isProduction = process.env.NODE_ENV === 'production';
-
-// Configure transporter with failover options
+// Nodemailer configuration
 const transporter = nodemailer.createTransport({
   service: 'gmail',
-  pool: true,
-  maxConnections: isProduction ? 5 : 1,
-  maxMessages: isProduction ? 100 : Infinity,
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASSWORD,
   },
-  tls: {
-    rejectUnauthorized: isProduction // Only in production
-  }
 });
 
-// Enhanced email verification with retry logic
+// Verify transporter connection
 const verifyTransporter = async () => {
   try {
     await transporter.verify();
     console.log('Email server is ready');
   } catch (error) {
     console.error('Email configuration error:', error);
-    // Retry after 5 seconds
-    setTimeout(verifyTransporter, 5000);
+    setTimeout(verifyTransporter, 5000); // Retry after 5 seconds
   }
 };
 
 verifyTransporter();
 
-// Rate limiting middleware (important for production)
-const rateLimit = require('express-rate-limit');
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isProduction ? 100 : 1000, // Limit each IP to 100 requests per windowMs in production
-  message: 'Too many requests from this IP, please try again later'
-});
-
-app.use('/send-email', limiter);
-
-// Enhanced email endpoint with input sanitization
+// Email endpoint
 app.post('/send-email', async (req, res) => {
   try {
     const {
@@ -88,23 +61,17 @@ app.post('/send-email', async (req, res) => {
       rejectionReason,
       attachment,
       attachmentName,
-      attachmentType
+      attachmentType,
     } = req.body;
 
     // Validate required fields
     if (!orderId || !callType || !startTime || !endTime || !duration || !userId || !price) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Missing required fields' 
-      });
+      return res.status(400).json({ success: false, error: 'Missing required fields' });
     }
 
-    // Basic input sanitization
     const sanitize = (str) => str.toString().replace(/<[^>]*>?/gm, '');
     const sanitizedOrderId = sanitize(orderId);
 
-    // Email configuration with improved HTML template
-     // Email Configuration
     const mailOptions = {
       from: `"Booking System" <${process.env.EMAIL_USER || 'juharyimer7@gmail.com'}>`,
       to: 'booking@hashimconsultancy.org',
@@ -129,79 +96,50 @@ app.post('/send-email', async (req, res) => {
     if (attachment && attachmentName) {
       mailOptions.attachments = [{
         filename: sanitize(attachmentName),
-        content: attachment,
-        encoding: 'base64',
-        contentType: attachmentType || 'application/octet-stream'
+        content: Buffer.from(attachment, 'base64'), // Decode base64 attachment
+        contentType: attachmentType || 'application/octet-stream',
       }];
     }
 
-    // Send email with timeout
-    const emailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('Email sending timeout')), 30000)
-    );
-
-    const info = await Promise.race([emailPromise, timeoutPromise]);
+    const info = await transporter.sendMail(mailOptions);
     console.log('Email sent:', info.messageId);
 
     res.status(200).json({
       success: true,
       message: 'Email sent successfully',
-      emailId: info.messageId
+      emailId: info.messageId,
     });
-
   } catch (error) {
     console.error('Error sending email:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to send email',
-      error: isProduction ? 'Internal server error' : error.message
+      error: process.env.NODE_ENV === 'production' ? 'Internal server error' : error.message,
     });
   }
 });
 
-// Enhanced health check endpoint
+// Health check endpoint
 app.get('/health', (req, res) => {
-  const healthcheck = {
+  res.status(200).json({
     status: 'healthy',
     uptime: process.uptime(),
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    memoryUsage: process.memoryUsage()
-  };
-  res.status(200).json(healthcheck);
+  });
 });
 
-// Improved error handling
+// Error handling
 app.use((err, req, res, next) => {
   console.error('Server error:', err);
   res.status(500).json({
     success: false,
     message: 'Internal server error',
-    error: isProduction ? null : err.message,
-    stack: isProduction ? null : err.stack
+    error: process.env.NODE_ENV === 'production' ? null : err.message,
   });
 });
 
-// Server startup with graceful shutdown
+// Server startup
 const PORT = process.env.PORT || 3001;
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
-});
-
-// Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received. Shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
-
-process.on('SIGINT', () => {
-  console.log('SIGINT received. Shutting down gracefully...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
 });
