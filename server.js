@@ -128,19 +128,11 @@ app.post('/send-email', async (req, res) => {
     // Add attachment if provided
     if (attachment && attachmentName) {
       mailOptions.attachments = [{
-        filename: attachmentName,
-        content: attachment,
-        encoding: 'base64',
-        contentType: attachmentType || 'application/octet-stream'
-      }];
-    }
-      
-      mailOptions.attachments.push({
         filename: sanitize(attachmentName),
         content: attachment,
         encoding: 'base64',
         contentType: attachmentType || 'application/octet-stream'
-      });
+      }];
     }
 
     // Send email with timeout
